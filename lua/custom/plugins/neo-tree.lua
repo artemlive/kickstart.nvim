@@ -6,6 +6,7 @@ return {
     vim.fn.sign_define('DiagnosticSignWarn', { text = ' ', texthl = 'DiagnosticSignWarn' })
     vim.fn.sign_define('DiagnosticSignInfo', { text = ' ', texthl = 'DiagnosticSignInfo' })
     vim.fn.sign_define('DiagnosticSignHint', { text = '󰌵', texthl = 'DiagnosticSignHint' })
+
     require('neo-tree').setup {
       close_if_last_window = false, -- Close Neo-tree if it is the last window left in the tab
       popup_border_style = 'rounded',
@@ -98,6 +99,59 @@ return {
       -- that will be available in all sources (if not overridden in `opts[source_name].commands`)
       -- see `:h neo-tree-custom-commands-global`
       commands = {
+        call_grep = function(state)
+          local pickers = require 'telescopePickers'
+          local node = state.tree:get_node()
+          local filepath = node:get_id()
+          local modify = vim.fn.fnamemodify
+          local fileDir = modify(filepath, ':p:h')
+          if fileDir then
+            pickers.prettyGrepPicker {
+              picker = 'live_grep',
+              options = { cwd = fileDir },
+            }
+          else
+            print 'No node selected in Neo-tree'
+          end
+        end,
+
+        copy_selector = function(state)
+          local node = state.tree:get_node()
+          local filepath = node:get_id()
+          local filename = node.name
+          local modify = vim.fn.fnamemodify
+
+          local vals = {
+            ['BASENAME'] = modify(filename, ':r'),
+            ['EXTENSION'] = modify(filename, ':e'),
+            ['FILENAME'] = filename,
+            ['PATH (CWD)'] = modify(filepath, ':.'),
+            ['PATH (HOME)'] = modify(filepath, ':~'),
+            ['PATH'] = filepath,
+            ['URI'] = vim.uri_from_fname(filepath),
+          }
+
+          local options = vim.tbl_filter(function(val)
+            return vals[val] ~= ''
+          end, vim.tbl_keys(vals))
+          if vim.tbl_isempty(options) then
+            vim.notify('No values to copy', vim.log.levels.WARN)
+            return
+          end
+          table.sort(options)
+          vim.ui.select(options, {
+            prompt = 'Choose to copy to clipboard:',
+            format_item = function(item)
+              return ('%s: %s'):format(item, vals[item])
+            end,
+          }, function(choice)
+            local result = vals[choice]
+            if result then
+              vim.notify(('Copied: `%s`'):format(result))
+              vim.fn.setreg('+', result)
+            end
+          end)
+        end,
         child_or_open = function(state)
           local node = state.tree:get_node()
           if node:has_children() then
@@ -225,6 +279,8 @@ return {
             ['.'] = 'set_root',
             ['H'] = 'toggle_hidden',
             ['l'] = 'child_or_open',
+            ['Y'] = 'copy_selector',
+            ['G'] = 'call_grep',
             ['/'] = 'fuzzy_finder',
             ['F'] = 'find_in_dir',
             ['D'] = 'fuzzy_finder_directory',
